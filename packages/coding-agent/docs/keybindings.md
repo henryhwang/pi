@@ -127,6 +127,7 @@ are not user-rebindable in this version:
 |---|---|
 | `h` / `j` / `k` / `l` (or arrows) | Move the cursor |
 | `w` / `b` / `e` | Move by word |
+| `W` / `B` / `E` | Move by WORD (whitespace-delimited) |
 | `0` / `^` / `$` | Line start / first non-blank / line end |
 | `gg` / `G` | First / last transcript row |
 | `Ctrl+u` / `Ctrl+d`, `PageUp` / `PageDown` | Half / full page |
@@ -135,9 +136,9 @@ are not user-rebindable in this version:
 | `y` / `Enter` | Yank the selection and leave copy mode |
 | `Esc` / `q` / `Ctrl+C` | Clear the selection, then leave copy mode |
 
-Unbound keys are swallowed while copy mode is active. Copying uses the same clipboard path as mouse
-selection, and `Ctrl+X` (`app.message.copy`) copies an active copy-mode selection even when
-`fullscreenCopyOnSelect` is enabled.
+Unbound keys are swallowed while copy mode is active, and the footer shows `COPY MODE`. Copying uses
+the same clipboard path as mouse selection, and `Ctrl+X` (`app.message.copy`) copies an active
+copy-mode selection even when `fullscreenCopyOnSelect` is enabled.
 
 ### Application
 

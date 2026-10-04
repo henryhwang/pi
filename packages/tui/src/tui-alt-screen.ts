@@ -835,14 +835,38 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		return ranges;
 	}
 
-	private moveCopyWord(motion: "w" | "b" | "e"): void {
+	private copyBigWordRanges(row: number): Array<{ start: number; end: number }> {
+		const plain = stripTerminalSequences(this.copyLineAt(row));
+		const ranges: Array<{ start: number; end: number }> = [];
+		let col = 0;
+		let current: { start: number; end: number } | undefined;
+		for (const segment of wordSegmenter.segment(plain)) {
+			const width = visibleWidth(segment.segment);
+			if (/^\s+$/u.test(segment.segment)) {
+				if (current) {
+					ranges.push(current);
+					current = undefined;
+				}
+			} else if (current) {
+				current.end = col + width;
+			} else {
+				current = { start: col, end: col + width };
+			}
+			col += width;
+		}
+		if (current) ranges.push(current);
+		return ranges;
+	}
+
+	private moveCopyWord(motion: "w" | "b" | "e", big = false): void {
 		const cursor = this.copyCursor;
 		const lines = this.getPrimaryLines();
 		if (!cursor || !lines) return;
+		const rangesAt = (row: number) => (big ? this.copyBigWordRanges(row) : this.copyWordRanges(row));
 		const col = cursor.col;
 		if (motion === "w") {
 			for (let row = cursor.row; row < lines.length; row++) {
-				const range = this.copyWordRanges(row).find((entry) => entry.start > (row === cursor.row ? col : -1));
+				const range = rangesAt(row).find((entry) => entry.start > (row === cursor.row ? col : -1));
 				if (range) {
 					this.setCopyCursor({ ...cursor, row, col: range.start }, true);
 					return;
@@ -853,7 +877,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 		if (motion === "b") {
 			for (let row = cursor.row; row >= 0; row--) {
-				const ranges = this.copyWordRanges(row).filter(
+				const ranges = rangesAt(row).filter(
 					(entry) => entry.start < (row === cursor.row ? col : Number.MAX_SAFE_INTEGER),
 				);
 				const last = ranges.at(-1);
@@ -866,7 +890,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 		for (let row = cursor.row; row < lines.length; row++) {
-			const range = this.copyWordRanges(row).find((entry) => entry.end > (row === cursor.row ? col : -1));
+			const range = rangesAt(row).find((entry) => entry.end > (row === cursor.row ? col : -1));
 			if (range) {
 				this.setCopyCursor({ ...cursor, row, col: Math.max(range.start, range.end - 1) }, true);
 				return;
@@ -983,6 +1007,18 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.moveCopyVertical(-1);
 			return;
 		}
+		if (matchesKey(data, "shift+w")) {
+			this.moveCopyWord("w", true);
+			return;
+		}
+		if (matchesKey(data, "shift+b")) {
+			this.moveCopyWord("b", true);
+			return;
+		}
+		if (matchesKey(data, "shift+e")) {
+			this.moveCopyWord("e", true);
+			return;
+		}
 		if (matchesKey(data, "w")) {
 			this.moveCopyWord("w");
 			return;
@@ -1025,7 +1061,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private applyCopyCursor(screen: string[], layout = this.currentLayout): string[] {
-		if (!this.copyModeActive || !this.copyCursor || this.getSelectionBounds() !== undefined) return screen;
+		if (!this.copyModeActive || !this.copyCursor) return screen;
 		if (!layout) return screen;
 		const scrollView = this.copyCursor.scrollView ?? this.getPrimaryScrollView();
 		const box = getScrollViewBox(layout, scrollView);
@@ -1045,8 +1081,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const before = sliceByColumn(line, 0, range.start, true);
 		const cell = sliceByColumn(line, range.start, Math.max(1, range.end - range.start), true);
 		const after = sliceByColumn(line, range.end, Math.max(0, visibleWidth(line) - range.end), true);
+		const hasSelection = this.getSelectionBounds() !== undefined;
+		const style = hasSelection ? "\x1b[4m" : "\x1b[7m";
+		const reset = hasSelection ? "\x1b[24m" : "\x1b[27m";
 		const out = [...screen];
-		out[row] = `${before}\x1b[7m${cell}\x1b[27m${after}`;
+		out[row] = `${before}${style}${cell}${reset}${after}`;
 		return out;
 	}
 

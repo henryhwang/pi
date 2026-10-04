@@ -2163,4 +2163,63 @@ describe("TuiAltScreen", () => {
 			setKeybindings(originalKeybindings);
 		}
 	});
+
+	it("moves by vim WORD with W/E", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(25, 3);
+		const copied: string[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async (text) => {
+				copied.push(text);
+				return true;
+			},
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("foo-bar baz.qux", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			terminal.sendInput("W");
+			terminal.sendInput("v");
+			terminal.sendInput("E");
+			terminal.sendInput("y");
+			await terminal.waitForRender();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			assert.deepStrictEqual(copied, ["baz.qux"]);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("keeps the copy cursor visible during a selection", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new RecordingTerminal(20, 5);
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async () => true,
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			await terminal.waitForRender();
+			assert.ok(terminal.events.some((event) => event.type === "write" && event.data.includes("\x1b[7m")));
+
+			terminal.sendInput("k");
+			terminal.sendInput("v");
+			terminal.sendInput("k");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.hasActiveSelection(), true);
+			assert.ok(terminal.events.some((event) => event.type === "write" && event.data.includes("\x1b[4m")));
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
 });
