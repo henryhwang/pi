@@ -7,7 +7,7 @@ import {
 import { AltScreenFlashContainer } from "./components/alt-screen-flash.ts";
 import { ScrollView } from "./components/scroll-view.ts";
 import { getKeybindings } from "./keybindings.ts";
-import { isKeyRelease } from "./keys.ts";
+import { isKeyRelease, matchesKey } from "./keys.ts";
 import {
 	getLayoutBoxesAt,
 	getScrollbarGeometry,
@@ -196,6 +196,8 @@ export interface TuiAltScreenOptions {
 	 * via an OSC 52 write.
 	 */
 	copySelection?: (text: string) => Promise<boolean | string>;
+	/** Called when fullscreen keyboard copy mode is entered or left. */
+	onCopyModeChange?: (active: boolean) => void;
 }
 
 /** Alternate-screen TUI with a scrollable, application-owned viewport. */
@@ -251,6 +253,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private readonly onRightClickPaste?: () => void;
 	private copyOnSelect: boolean;
 	private readonly copySelection?: (text: string) => Promise<boolean | string>;
+	private readonly onCopyModeChange?: (active: boolean) => void;
+	private copyModeActive = false;
+	private copyCursor?: SelectionPoint;
+	private copyVisual = false;
+	private copyVisualLine = false;
+	private copyPreferredCol?: number;
+	private copyPendingG = false;
 
 	constructor(
 		terminal: Terminal,
@@ -278,6 +287,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.onRightClickPaste = options.onRightClickPaste;
 		this.copyOnSelect = options.copyOnSelect ?? true;
 		this.copySelection = options.copySelection;
+		this.onCopyModeChange = options.onCopyModeChange;
 		this.addInputListener((data) => this.handleViewportInput(data));
 	}
 
@@ -299,6 +309,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	setCopyOnSelect(enabled: boolean): void {
 		this.copyOnSelect = enabled;
+	}
+
+	/** Whether fullscreen keyboard copy mode is active. */
+	isCopyModeActive(): boolean {
+		return this.copyModeActive;
 	}
 
 	/** Whether the fullscreen viewport has a non-empty active text selection. */
@@ -669,8 +684,375 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.mousePressMoved = false;
 	}
 
+	// --- Fullscreen keyboard copy mode ---------------------------------------------------------
+
+	private enterCopyMode(): void {
+		const lines = this.getPrimaryLines();
+		const scrollView = this.getPrimaryScrollView();
+		if (!lines || lines.length === 0) return;
+		const last = Math.max(
+			0,
+			Math.min(lines.length - 1, scrollView.scrollTop + Math.max(1, scrollView.viewportHeight) - 1),
+		);
+		this.copyModeActive = true;
+		this.copyVisual = false;
+		this.copyVisualLine = false;
+		this.copyPendingG = false;
+		this.selectionAnchor = undefined;
+		this.selectionFocus = undefined;
+		this.selectionGranularity = "character";
+		this.selectionInitialRange = undefined;
+		this.copyCursor = { row: last, col: 0, scrollView };
+		this.copyPreferredCol = 0;
+		this.scrollToRevealCopyCursor();
+		this.onCopyModeChange?.(true);
+		this.flash("COPY MODE — h/j/k/l move · v/V select · y copy · Esc exit");
+		this.requestRender();
+	}
+
+	private exitCopyMode(clearSelection = true): void {
+		if (!this.copyModeActive) return;
+		this.copyModeActive = false;
+		this.copyVisual = false;
+		this.copyVisualLine = false;
+		this.copyPendingG = false;
+		this.copyCursor = undefined;
+		this.copyPreferredCol = undefined;
+		if (clearSelection) this.clearTextSelection();
+		this.onCopyModeChange?.(false);
+		this.requestRender();
+	}
+
+	private getPrimaryLines(): readonly string[] | undefined {
+		if (!this.currentLayout) return undefined;
+		return getScrollViewBox(this.currentLayout, this.getPrimaryScrollView())?.scrollContentLines;
+	}
+
+	private copyLineAt(row: number): string {
+		const lines = this.getPrimaryLines();
+		if (!lines || lines.length === 0) return "";
+		return lines[Math.max(0, Math.min(lines.length - 1, row))] ?? "";
+	}
+
+	private clampCopyPoint(point: SelectionPoint): SelectionPoint {
+		const lines = this.getPrimaryLines();
+		if (!lines || lines.length === 0) return point;
+		const row = Math.max(0, Math.min(lines.length - 1, point.row));
+		const line = lines[row] ?? "";
+		const width = visibleWidth(stripTerminalSequences(line));
+		const col = Math.max(0, Math.min(width, point.col));
+		const snapped = getGraphemeCellRange(line, col)?.start ?? col;
+		return { row, col: snapped, scrollView: point.scrollView };
+	}
+
+	private setCopyCursor(point: SelectionPoint, stickyColumn = false): void {
+		const next = this.clampCopyPoint(point);
+		this.copyCursor = next;
+		if (stickyColumn) this.copyPreferredCol = next.col;
+		this.syncCopySelection();
+		this.scrollToRevealCopyCursor();
+		this.requestRender();
+	}
+
+	private syncCopySelection(): void {
+		const cursor = this.copyCursor;
+		if (!cursor || !this.copyVisual) return;
+		if (this.copyVisualLine) this.updateSelectionFocus(cursor);
+		else this.selectionFocus = cursor;
+	}
+
+	private scrollToRevealCopyCursor(): void {
+		const cursor = this.copyCursor;
+		if (!cursor) return;
+		const scrollView = this.getPrimaryScrollView();
+		const height = Math.max(1, scrollView.viewportHeight);
+		const top = scrollView.scrollTop;
+		if (cursor.row < top) scrollView.scrollTo(cursor.row, { disableFollow: true });
+		else if (cursor.row >= top + height) scrollView.scrollTo(cursor.row - height + 1, { disableFollow: true });
+	}
+
+	private moveCopyHorizontal(delta: number): void {
+		const cursor = this.copyCursor;
+		if (!cursor) return;
+		const line = this.copyLineAt(cursor.row);
+		const range = getGraphemeCellRange(line, cursor.col);
+		const target = delta < 0 ? (range?.start ?? cursor.col) - 1 : (range?.end ?? cursor.col + 1);
+		this.setCopyCursor({ ...cursor, col: target }, true);
+	}
+
+	private moveCopyVertical(delta: number): void {
+		const cursor = this.copyCursor;
+		const lines = this.getPrimaryLines();
+		if (!cursor || !lines) return;
+		const row = Math.max(0, Math.min(lines.length - 1, cursor.row + delta));
+		this.setCopyCursor({ ...cursor, row, col: this.copyPreferredCol ?? cursor.col }, false);
+	}
+
+	private moveCopyToLineEdge(edge: "start" | "firstNonBlank" | "end" | "top" | "bottom"): void {
+		const cursor = this.copyCursor;
+		const lines = this.getPrimaryLines();
+		if (!cursor || !lines) return;
+		if (edge === "top") {
+			this.setCopyCursor({ ...cursor, row: 0, col: 0 }, true);
+			return;
+		}
+		if (edge === "bottom") {
+			this.setCopyCursor({ ...cursor, row: lines.length - 1, col: 0 }, true);
+			return;
+		}
+		if (edge === "end") {
+			this.setCopyCursor(
+				{ ...cursor, col: visibleWidth(stripTerminalSequences(this.copyLineAt(cursor.row))) },
+				true,
+			);
+			return;
+		}
+		if (edge === "firstNonBlank") {
+			const leading = /^\s*/.exec(stripTerminalSequences(this.copyLineAt(cursor.row)))?.[0] ?? "";
+			this.setCopyCursor({ ...cursor, col: visibleWidth(leading) }, true);
+			return;
+		}
+		this.setCopyCursor({ ...cursor, col: 0 }, true);
+	}
+
+	private copyWordRanges(row: number): Array<{ start: number; end: number }> {
+		const plain = stripTerminalSequences(this.copyLineAt(row));
+		const ranges: Array<{ start: number; end: number }> = [];
+		let col = 0;
+		let current: { start: number; end: number } | undefined;
+		for (const segment of wordSegmenter.segment(plain)) {
+			const width = visibleWidth(segment.segment);
+			if (segment.isWordLike) {
+				if (current) current.end = col + width;
+				else current = { start: col, end: col + width };
+			} else if (current) {
+				ranges.push(current);
+				current = undefined;
+			}
+			col += width;
+		}
+		if (current) ranges.push(current);
+		return ranges;
+	}
+
+	private moveCopyWord(motion: "w" | "b" | "e"): void {
+		const cursor = this.copyCursor;
+		const lines = this.getPrimaryLines();
+		if (!cursor || !lines) return;
+		const col = cursor.col;
+		if (motion === "w") {
+			for (let row = cursor.row; row < lines.length; row++) {
+				const range = this.copyWordRanges(row).find((entry) => entry.start > (row === cursor.row ? col : -1));
+				if (range) {
+					this.setCopyCursor({ ...cursor, row, col: range.start }, true);
+					return;
+				}
+			}
+			this.setCopyCursor({ ...cursor, row: lines.length - 1, col: 0 }, true);
+			return;
+		}
+		if (motion === "b") {
+			for (let row = cursor.row; row >= 0; row--) {
+				const ranges = this.copyWordRanges(row).filter(
+					(entry) => entry.start < (row === cursor.row ? col : Number.MAX_SAFE_INTEGER),
+				);
+				const last = ranges.at(-1);
+				if (last) {
+					this.setCopyCursor({ ...cursor, row, col: last.start }, true);
+					return;
+				}
+			}
+			this.setCopyCursor({ ...cursor, row: 0, col: 0 }, true);
+			return;
+		}
+		for (let row = cursor.row; row < lines.length; row++) {
+			const range = this.copyWordRanges(row).find((entry) => entry.end > (row === cursor.row ? col : -1));
+			if (range) {
+				this.setCopyCursor({ ...cursor, row, col: Math.max(range.start, range.end - 1) }, true);
+				return;
+			}
+		}
+		this.setCopyCursor({ ...cursor, row: lines.length - 1, col: 0 }, true);
+	}
+
+	private moveCopyPage(direction: -1 | 1, half: boolean): void {
+		const cursor = this.copyCursor;
+		if (!cursor) return;
+		const height = Math.max(1, this.getPrimaryScrollView().viewportHeight);
+		const amount = Math.max(1, half ? Math.floor(height / 2) : height);
+		this.setCopyCursor({ ...cursor, row: cursor.row + direction * amount }, false);
+	}
+
+	private toggleCopyVisual(linewise: boolean): void {
+		const cursor = this.copyCursor;
+		if (!cursor) return;
+		if (this.copyVisual && this.copyVisualLine === linewise) {
+			this.copyVisual = false;
+			this.copyVisualLine = false;
+			this.clearTextSelectionKeepCopyMode();
+			return;
+		}
+		this.copyVisual = true;
+		this.copyVisualLine = linewise;
+		if (linewise) {
+			const range = this.getLineSelection(cursor);
+			this.selectionGranularity = "line";
+			this.selectionAnchor = range.start;
+			this.selectionFocus = range.end;
+			this.selectionInitialRange = range;
+		} else {
+			this.selectionGranularity = "character";
+			this.selectionAnchor = { ...cursor };
+			this.selectionFocus = cursor;
+			this.selectionInitialRange = undefined;
+		}
+		this.requestRender();
+	}
+
+	private clearTextSelectionKeepCopyMode(): void {
+		this.selectionAnchor = undefined;
+		this.selectionFocus = undefined;
+		this.selectionGranularity = "character";
+		this.selectionInitialRange = undefined;
+		this.requestRender();
+	}
+
+	private swapCopyEnds(): void {
+		if (!this.copyVisual) return;
+		const anchor = this.selectionAnchor;
+		this.selectionAnchor = this.selectionFocus;
+		this.selectionFocus = anchor;
+		this.requestRender();
+	}
+
+	private yankCopyMode(): void {
+		if (this.getSelectionBounds() !== undefined) void this.copyActiveSelectionToClipboard();
+		this.exitCopyMode();
+	}
+
+	private handleCopyModeInput(data: string): void {
+		if (!this.copyCursor) return;
+		const pendingG = this.copyPendingG;
+		this.copyPendingG = false;
+		if (matchesKey(data, "g")) {
+			if (pendingG) this.moveCopyToLineEdge("top");
+			else {
+				this.copyPendingG = true;
+				this.flash("g");
+			}
+			return;
+		}
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c") || matchesKey(data, "q")) {
+			if (this.copyVisual) this.toggleCopyVisual(this.copyVisualLine);
+			else this.exitCopyMode();
+			return;
+		}
+		if (matchesKey(data, "y") || matchesKey(data, "enter")) {
+			this.yankCopyMode();
+			return;
+		}
+		if (matchesKey(data, "shift+v")) {
+			this.toggleCopyVisual(true);
+			return;
+		}
+		if (matchesKey(data, "v")) {
+			this.toggleCopyVisual(false);
+			return;
+		}
+		if (matchesKey(data, "o") && this.copyVisual) {
+			this.swapCopyEnds();
+			return;
+		}
+		if (matchesKey(data, "shift+g")) {
+			this.moveCopyToLineEdge("bottom");
+			return;
+		}
+		if (matchesKey(data, "h") || matchesKey(data, "left")) {
+			this.moveCopyHorizontal(-1);
+			return;
+		}
+		if (matchesKey(data, "l") || matchesKey(data, "right")) {
+			this.moveCopyHorizontal(1);
+			return;
+		}
+		if (matchesKey(data, "j") || matchesKey(data, "down")) {
+			this.moveCopyVertical(1);
+			return;
+		}
+		if (matchesKey(data, "k") || matchesKey(data, "up")) {
+			this.moveCopyVertical(-1);
+			return;
+		}
+		if (matchesKey(data, "w")) {
+			this.moveCopyWord("w");
+			return;
+		}
+		if (matchesKey(data, "b")) {
+			this.moveCopyWord("b");
+			return;
+		}
+		if (matchesKey(data, "e")) {
+			this.moveCopyWord("e");
+			return;
+		}
+		if (matchesKey(data, "0")) {
+			this.moveCopyToLineEdge("start");
+			return;
+		}
+		if (matchesKey(data, "^")) {
+			this.moveCopyToLineEdge("firstNonBlank");
+			return;
+		}
+		if (matchesKey(data, "$")) {
+			this.moveCopyToLineEdge("end");
+			return;
+		}
+		if (matchesKey(data, "ctrl+d")) {
+			this.moveCopyPage(1, true);
+			return;
+		}
+		if (matchesKey(data, "ctrl+u")) {
+			this.moveCopyPage(-1, true);
+			return;
+		}
+		if (matchesKey(data, "pageDown")) {
+			this.moveCopyPage(1, false);
+			return;
+		}
+		if (matchesKey(data, "pageUp")) {
+			this.moveCopyPage(-1, false);
+		}
+	}
+
+	private applyCopyCursor(screen: string[], layout = this.currentLayout): string[] {
+		if (!this.copyModeActive || !this.copyCursor || this.getSelectionBounds() !== undefined) return screen;
+		if (!layout) return screen;
+		const scrollView = this.copyCursor.scrollView ?? this.getPrimaryScrollView();
+		const box = getScrollViewBox(layout, scrollView);
+		if (!box) return screen;
+		const row = box.rect.y + this.copyCursor.row - scrollView.scrollTop;
+		const visibleTop = Math.max(0, box.rect.y, box.clip.y);
+		const visibleBottom = Math.min(
+			screen.length - 1,
+			box.rect.y + box.rect.height - 1,
+			box.clip.y + box.clip.height - 1,
+		);
+		if (row < visibleTop || row > visibleBottom) return screen;
+		const line = screen[row] ?? "";
+		if (isImageLine(line)) return screen;
+		const range = getGraphemeCellRange(line, box.rect.x + this.copyCursor.col);
+		if (!range) return screen;
+		const before = sliceByColumn(line, 0, range.start, true);
+		const cell = sliceByColumn(line, range.start, Math.max(1, range.end - range.start), true);
+		const after = sliceByColumn(line, range.end, Math.max(0, visibleWidth(line) - range.end), true);
+		const out = [...screen];
+		out[row] = `${before}\x1b[7m${cell}\x1b[27m${after}`;
+		return out;
+	}
+
 	private handleViewportInput(data: string): { consume?: boolean } | undefined {
 		if (data === FOCUS_OUT) {
+			if (this.copyModeActive) this.exitCopyMode();
 			const hadActiveSelection = this.selectionPressActive;
 			const hadNonEmptyActiveSelection = hadActiveSelection && this.getSelectionBounds() !== undefined;
 			this.selectionPressActive = false;
@@ -720,6 +1102,18 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
+		if (this.copyModeActive && !this.shouldDeferViewportInputToOverlay()) {
+			if (!isRelease) this.handleCopyModeInput(data);
+			return { consume: true };
+		}
+		if (
+			!this.copyModeActive &&
+			!this.shouldDeferViewportInputToOverlay() &&
+			keybindings.matches(data, "tui.altScreen.copyMode")
+		) {
+			if (!isRelease) this.enterCopyMode();
+			return { consume: true };
+		}
 		if (keybindings.matches(data, "tui.altScreen.search")) {
 			if (!isRelease) this.toggleSearch();
 			return { consume: true };
@@ -1684,6 +2078,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		screen = this.compositeOverlays(screen, width, height);
 		if (screen.length > height) screen = screen.slice(screen.length - height);
 		screen = this.applySelection(screen, nextLayout);
+		screen = this.applyCopyCursor(screen, nextLayout);
 		screen = this.compositeFlashes(screen, width, height);
 
 		const cursorPos = this.extractCursorPosition(screen, height);

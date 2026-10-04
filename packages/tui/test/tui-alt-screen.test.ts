@@ -2046,4 +2046,121 @@ describe("TuiAltScreen", () => {
 		assert.ok(terminal.getViewport().some((line) => line.includes("↑ ↓")));
 		tui.stop();
 	});
+
+	it("enters keyboard copy mode and yanks a characterwise selection", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const copied: string[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async (text) => {
+				copied.push(text);
+				return true;
+			},
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), false);
+
+			terminal.sendInput("\x19");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), true);
+			assert.ok(tui.viewportTop >= 0);
+
+			terminal.sendInput("k");
+			terminal.sendInput("k");
+			terminal.sendInput("v");
+			terminal.sendInput("j");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.hasActiveSelection(), true);
+
+			terminal.sendInput("y");
+			await terminal.waitForRender();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			assert.deepStrictEqual(copied, ["gamma\nd"]);
+			assert.strictEqual(tui.isCopyModeActive(), false);
+			assert.strictEqual(tui.hasActiveSelection(), false);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("yanks a linewise visual selection", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const copied: string[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async (text) => {
+				copied.push(text);
+				return true;
+			},
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			terminal.sendInput("k");
+			terminal.sendInput("k");
+			terminal.sendInput("V");
+			terminal.sendInput("j");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.hasActiveSelection(), true);
+
+			terminal.sendInput("y");
+			await terminal.waitForRender();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			assert.deepStrictEqual(copied, ["gamma\ndelta"]);
+			assert.strictEqual(tui.isCopyModeActive(), false);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("clears a selection then exits keyboard copy mode", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const copied: string[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async (text) => {
+				copied.push(text);
+				return true;
+			},
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			terminal.sendInput("k");
+			terminal.sendInput("k");
+			terminal.sendInput("v");
+			terminal.sendInput("j");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.hasActiveSelection(), true);
+
+			terminal.sendInput("q");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), true);
+			assert.strictEqual(tui.hasActiveSelection(), false);
+
+			terminal.sendInput("q");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), false);
+			assert.deepStrictEqual(copied, []);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
 });

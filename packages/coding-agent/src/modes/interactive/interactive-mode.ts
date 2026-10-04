@@ -6568,8 +6568,8 @@ export class InteractiveMode {
 		if (
 			options.preferSelection &&
 			this.ui instanceof TuiAltScreen &&
-			!this.ui.getCopyOnSelect() &&
-			this.ui.hasActiveSelection()
+			this.ui.hasActiveSelection() &&
+			(this.ui.isCopyModeActive() || !this.ui.getCopyOnSelect())
 		) {
 			await this.ui.copyActiveSelectionToClipboard();
 			return;

@@ -115,6 +115,29 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 | `tui.altScreen.searchClose` | `escape` | Close transcript search |
 | `tui.altScreen.top` | `home` | Scroll to the beginning of the transcript |
 | `tui.altScreen.bottom` | `end` | Scroll to the transcript end and follow new output |
+| `tui.altScreen.copyMode` | None | Enter fullscreen keyboard copy mode |
+
+##### Keyboard copy mode
+
+`tui.altScreen.copyMode` is unbound by default; bind it in `keybindings.json`, for example
+`{ "tui.altScreen.copyMode": "alt+z" }`. Inside copy mode the following keys are handled locally and
+are not user-rebindable in this version:
+
+| Key | Action |
+|---|---|
+| `h` / `j` / `k` / `l` (or arrows) | Move the cursor |
+| `w` / `b` / `e` | Move by word |
+| `0` / `^` / `$` | Line start / first non-blank / line end |
+| `gg` / `G` | First / last transcript row |
+| `Ctrl+u` / `Ctrl+d`, `PageUp` / `PageDown` | Half / full page |
+| `v` / `V` | Character / line visual selection |
+| `o` | Swap the selection ends |
+| `y` / `Enter` | Yank the selection and leave copy mode |
+| `Esc` / `q` / `Ctrl+C` | Clear the selection, then leave copy mode |
+
+Unbound keys are swallowed while copy mode is active. Copying uses the same clipboard path as mouse
+selection, and `Ctrl+X` (`app.message.copy`) copies an active copy-mode selection even when
+`fullscreenCopyOnSelect` is enabled.
 
 ### Application
 
