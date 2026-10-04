@@ -2222,4 +2222,119 @@ describe("TuiAltScreen", () => {
 			setKeybindings(originalKeybindings);
 		}
 	});
+
+	it("exits copy mode on stop and notifies deactivation", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const changes: boolean[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async () => true,
+			onCopyModeChange: (active) => changes.push(active),
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), true);
+		} finally {
+			tui.stop();
+			assert.strictEqual(tui.isCopyModeActive(), false);
+			assert.deepStrictEqual(changes, [true, false]);
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("advances e motion to the end of the next word", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(25, 3);
+		const copied: string[] = [];
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async (text) => {
+				copied.push(text);
+				return true;
+			},
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("foo bar baz", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			terminal.sendInput("w");
+			terminal.sendInput("e");
+			terminal.sendInput("v");
+			terminal.sendInput("e");
+			terminal.sendInput("y");
+			await terminal.waitForRender();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			assert.deepStrictEqual(copied, ["r baz"]);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("keeps the copy cursor visible at the end of a line and on blank lines", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const tui = new TuiAltScreen(terminal, undefined, undefined, { copySelection: async () => true });
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\n\nfoo", 0, 0));
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19"); // cursor on last row (foo), col 0
+			terminal.sendInput("$"); // end of line: block cursor on the last cell
+			await terminal.waitForRender();
+			assert.ok(tui.getScreenLines().some((line) => line.includes("\x1b[7m \x1b[27m")));
+
+			terminal.sendInput("k"); // blank line: block cursor on a space cell
+			await terminal.waitForRender();
+			assert.ok(tui.getScreenLines()[1]?.includes("\x1b[7m \x1b[27m"));
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
+
+	it("forwards passthrough keys to the focused component in copy mode", async () => {
+		const originalKeybindings = getKeybindings();
+		const terminal = new VirtualTerminal(20, 5);
+		const editor = new InputOverlay();
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copySelection: async () => true,
+			copyModePassthrough: (data) => data === "\x18",
+		});
+		setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.copyMode": "ctrl+y" }));
+		try {
+			tui.addChild(new Text("alpha\nbeta\ngamma\ndelta\nepsilon", 0, 0));
+			tui.setFocus(editor);
+			tui.start();
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x19");
+			terminal.sendInput("k");
+			await terminal.waitForRender();
+			assert.strictEqual(tui.isCopyModeActive(), true);
+
+			terminal.sendInput("\x18"); // passthrough
+			await terminal.waitForRender();
+			assert.deepStrictEqual(editor.inputs, ["\x18"]);
+			assert.strictEqual(tui.isCopyModeActive(), true);
+
+			terminal.sendInput("l"); // still handled by copy mode
+			await terminal.waitForRender();
+			assert.deepStrictEqual(editor.inputs, ["\x18"]);
+		} finally {
+			tui.stop();
+			setKeybindings(originalKeybindings);
+		}
+	});
 });

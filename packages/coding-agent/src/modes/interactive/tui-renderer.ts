@@ -14,6 +14,7 @@ export interface InteractiveTuiOptions {
 	readonly fullscreenCopyOnSelect?: boolean;
 	readonly fullscreenWheelScrollLines?: WheelScrollLines;
 	readonly onCopyModeChange?: (active: boolean) => void;
+	readonly copyModePassthrough?: (data: string) => boolean;
 }
 
 /** Composition root shared by coding-agent presentations. */
@@ -37,6 +38,7 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 			onRightClickPaste: options.onRightClickPaste,
 			copyOnSelect: options.fullscreenCopyOnSelect,
 			onCopyModeChange: options.onCopyModeChange,
+			copyModePassthrough: options.copyModePassthrough,
 			wheelScrollLines: options.fullscreenWheelScrollLines ?? "auto",
 			copySelection: async (text) => {
 				try {

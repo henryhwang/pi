@@ -616,7 +616,8 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
-			onCopyModeChange: (active) => this.setExtensionStatus("copyMode", active ? "COPY MODE" : undefined),
+			onCopyModeChange: (active) => this.footerDataProvider.setCopyModeActive(active),
+			copyModePassthrough: (data) => this.keybindings.matches(data, "app.message.copy"),
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -905,7 +906,8 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
-			onCopyModeChange: (active) => this.setExtensionStatus("copyMode", active ? "COPY MODE" : undefined),
+			onCopyModeChange: (active) => this.footerDataProvider.setCopyModeActive(active),
+			copyModePassthrough: (data) => this.keybindings.matches(data, "app.message.copy"),
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;

@@ -198,6 +198,12 @@ export interface TuiAltScreenOptions {
 	copySelection?: (text: string) => Promise<boolean | string>;
 	/** Called when fullscreen keyboard copy mode is entered or left. */
 	onCopyModeChange?: (active: boolean) => void;
+	/**
+	 * Return true to forward a key to the focused component instead of handling it locally while
+	 * fullscreen keyboard copy mode is active. Used to keep app-level bindings (for example copy)
+	 * working without hardcoding keys in this package.
+	 */
+	copyModePassthrough?: (data: string) => boolean;
 }
 
 /** Alternate-screen TUI with a scrollable, application-owned viewport. */
@@ -254,6 +260,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private copyOnSelect: boolean;
 	private readonly copySelection?: (text: string) => Promise<boolean | string>;
 	private readonly onCopyModeChange?: (active: boolean) => void;
+	private readonly copyModePassthrough?: (data: string) => boolean;
 	private copyModeActive = false;
 	private copyCursor?: SelectionPoint;
 	private copyVisual = false;
@@ -288,6 +295,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.copyOnSelect = options.copyOnSelect ?? true;
 		this.copySelection = options.copySelection;
 		this.onCopyModeChange = options.onCopyModeChange;
+		this.copyModePassthrough = options.copyModePassthrough;
 		this.addInputListener((data) => this.handleViewportInput(data));
 	}
 
@@ -395,6 +403,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	protected override beforeTerminalStop(_options: TuiStopOptions): void {
+		this.exitCopyMode();
 		this.closeSearch();
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = false;
@@ -698,10 +707,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.copyVisual = false;
 		this.copyVisualLine = false;
 		this.copyPendingG = false;
-		this.selectionAnchor = undefined;
-		this.selectionFocus = undefined;
-		this.selectionGranularity = "character";
-		this.selectionInitialRange = undefined;
+		this.clearTextSelection();
 		this.copyCursor = { row: last, col: 0, scrollView };
 		this.copyPreferredCol = 0;
 		this.scrollToRevealCopyCursor();
@@ -740,7 +746,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const row = Math.max(0, Math.min(lines.length - 1, point.row));
 		const line = lines[row] ?? "";
 		const width = visibleWidth(stripTerminalSequences(line));
-		const col = Math.max(0, Math.min(width, point.col));
+		const col = Math.max(0, Math.min(Math.max(0, width - 1), point.col));
 		const snapped = getGraphemeCellRange(line, col)?.start ?? col;
 		return { row, col: snapped, scrollView: point.scrollView };
 	}
@@ -872,7 +878,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					return;
 				}
 			}
-			this.setCopyCursor({ ...cursor, row: lines.length - 1, col: 0 }, true);
+			this.setCopyCursor({ ...cursor, row: lines.length - 1, col: Number.MAX_SAFE_INTEGER }, true);
 			return;
 		}
 		if (motion === "b") {
@@ -890,13 +896,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 		for (let row = cursor.row; row < lines.length; row++) {
-			const range = rangesAt(row).find((entry) => entry.end > (row === cursor.row ? col : -1));
+			const range = rangesAt(row).find((entry) => entry.end - 1 > (row === cursor.row ? col : -1));
 			if (range) {
 				this.setCopyCursor({ ...cursor, row, col: Math.max(range.start, range.end - 1) }, true);
 				return;
 			}
 		}
-		this.setCopyCursor({ ...cursor, row: lines.length - 1, col: 0 }, true);
+		this.setCopyCursor({ ...cursor, row: lines.length - 1, col: Number.MAX_SAFE_INTEGER }, true);
 	}
 
 	private moveCopyPage(direction: -1 | 1, half: boolean): void {
@@ -946,6 +952,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const anchor = this.selectionAnchor;
 		this.selectionAnchor = this.selectionFocus;
 		this.selectionFocus = anchor;
+		if (this.copyVisualLine && this.selectionAnchor) {
+			this.selectionInitialRange = this.getLineSelection(this.selectionAnchor);
+		}
 		this.requestRender();
 	}
 
@@ -1076,17 +1085,67 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (row < visibleTop || row > visibleBottom) return screen;
 		const line = screen[row] ?? "";
 		if (isImageLine(line)) return screen;
-		const range = getGraphemeCellRange(line, box.rect.x + this.copyCursor.col);
-		if (!range) return screen;
-		const before = sliceByColumn(line, 0, range.start, true);
-		const cell = sliceByColumn(line, range.start, Math.max(1, range.end - range.start), true);
-		const after = sliceByColumn(line, range.end, Math.max(0, visibleWidth(line) - range.end), true);
+		const cursorColumn = box.rect.x + this.copyCursor.col;
+		const range = getGraphemeCellRange(line, cursorColumn);
+		const lineWidth = visibleWidth(line);
+		let before: string;
+		let cell: string;
+		let after: string;
+		if (range) {
+			before = sliceByColumn(line, 0, range.start, true);
+			cell = sliceByColumn(line, range.start, Math.max(1, range.end - range.start), true);
+			after = sliceByColumn(line, range.end, Math.max(0, lineWidth - range.end), true);
+		} else {
+			// On or after the last cell (end of line or a blank line) there is no grapheme to
+			// highlight, so paint a block cursor on the cell itself.
+			before = sliceByColumn(line, 0, cursorColumn, true);
+			cell = " ";
+			after = sliceByColumn(line, cursorColumn + 1, Math.max(0, lineWidth - cursorColumn - 1), true);
+		}
 		const hasSelection = this.getSelectionBounds() !== undefined;
-		const style = hasSelection ? "\x1b[4m" : "\x1b[7m";
-		const reset = hasSelection ? "\x1b[24m" : "\x1b[27m";
+		// Inside a selection the cursor uses underline. Do not clear an underline that was already
+		// active (for example a highlighted match); it would remove that decoration mid-line.
+		const underlineAlreadyActive = hasSelection && this.isUnderlineActive(before);
+		const style = hasSelection ? (underlineAlreadyActive ? "" : "\x1b[4m") : "\x1b[7m";
+		const reset = hasSelection ? (underlineAlreadyActive ? "" : "\x1b[24m") : "\x1b[27m";
 		const out = [...screen];
 		out[row] = `${before}${style}${cell}${reset}${after}`;
 		return out;
+	}
+
+	private isUnderlineActive(text: string): boolean {
+		let active = false;
+		let index = 0;
+		while (index < text.length) {
+			const ansi = extractAnsiCode(text, index);
+			if (!ansi) {
+				index += 1;
+				continue;
+			}
+			if (ansi.code.startsWith("\x1b[") && ansi.code.endsWith("m")) {
+				active = this.parseUnderlineState(ansi.code.slice(2, -1), active);
+			}
+			index += ansi.length;
+		}
+		return active;
+	}
+
+	private parseUnderlineState(params: string, active: boolean): boolean {
+		const parts = params.split(";").map((part) => (part === "" ? "0" : part));
+		for (let i = 0; i < parts.length; i++) {
+			const value = Number.parseInt(parts[i]!, 10);
+			if (Number.isNaN(value)) continue;
+			if (value === 0 || value === 24) {
+				active = false;
+			} else if (value === 4) {
+				active = true;
+			} else if ((value === 38 || value === 48) && (parts[i + 1] === "2" || parts[i + 1] === "5")) {
+				// 38/48 introduces a color code; skip its mode and color components so the
+				// component values are not mistaken for SGR parameters (for example 0).
+				i += parts[i + 1] === "2" ? 4 : 2;
+			}
+		}
+		return active;
 	}
 
 	private handleViewportInput(data: string): { consume?: boolean } | undefined {
@@ -1142,6 +1201,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
 		if (this.copyModeActive && !this.shouldDeferViewportInputToOverlay()) {
+			if (this.copyModePassthrough?.(data)) return undefined;
 			if (!isRelease) this.handleCopyModeInput(data);
 			return { consume: true };
 		}
