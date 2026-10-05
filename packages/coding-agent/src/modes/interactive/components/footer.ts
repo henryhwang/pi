@@ -286,15 +286,18 @@ export class FooterComponent implements Component {
 		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
 		const lines = [pwdLine, dimStatsLeft + dimRemainder];
 
-		// Add extension statuses on a single line, sorted by key alphabetically
-		const extensionStatuses = this.footerData.getExtensionStatuses();
-		if (extensionStatuses.size > 0) {
-			const sortedStatuses = Array.from(extensionStatuses.entries())
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([, text]) => sanitizeStatusText(text));
-			const statusLine = sortedStatuses.join(" ");
+		// Add the copy-mode indicator and extension statuses on a single line, extension statuses
+		// sorted by key alphabetically.
+		const statusParts: string[] = [];
+		if (this.footerData.isCopyModeActive()) statusParts.push("COPY MODE");
+		for (const [, text] of Array.from(this.footerData.getExtensionStatuses().entries()).sort(([a], [b]) =>
+			a.localeCompare(b),
+		)) {
+			statusParts.push(sanitizeStatusText(text));
+		}
+		if (statusParts.length > 0) {
 			// Truncate to terminal width with dim ellipsis for consistency with footer style
-			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+			lines.push(truncateToWidth(statusParts.join(" "), width, theme.fg("dim", "...")));
 		}
 
 		return lines;

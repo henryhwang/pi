@@ -115,6 +115,35 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 | `tui.altScreen.searchClose` | `escape` | Close transcript search |
 | `tui.altScreen.top` | `ctrl+home` | Scroll to the beginning of the transcript |
 | `tui.altScreen.bottom` | `ctrl+end` | Scroll to the transcript end and follow new output |
+| `tui.altScreen.copyMode` | None | Enter fullscreen keyboard copy mode |
+
+##### Keyboard copy mode
+
+`tui.altScreen.copyMode` is unbound by default; bind it in `keybindings.json`, for example
+`{ "tui.altScreen.copyMode": "alt+z" }`. Copy mode has its own `tui.altScreen.copyMode*`
+keybindings, so every motion and action can be rebound:
+
+| Keybinding | Default | Action |
+|---|---|---|
+| `tui.altScreen.copyModeCancel` | `escape`, `q`, `ctrl+c` | Clear the selection, then leave copy mode |
+| `tui.altScreen.copyModeCopy` | `y`, `enter` | Yank the selection and leave copy mode |
+| `tui.altScreen.copyModeVisual` | `v` | Character visual selection |
+| `tui.altScreen.copyModeVisualLine` | `shift+v` | Line visual selection |
+| `tui.altScreen.copyModeSwapEnds` | `o` | Swap the selection ends |
+| `tui.altScreen.copyModeLeft` / `copyModeRight` | `h` / `l`, `left` / `right` | Move the cursor |
+| `tui.altScreen.copyModeUp` / `copyModeDown` | `k` / `j`, `up` / `down` | Move the cursor |
+| `tui.altScreen.copyModeWordForward` / `WordBackward` / `WordEnd` | `w` / `b` / `e` | Move by word |
+| `tui.altScreen.copyModeBigWordForward` / `BigWordBackward` / `BigWordEnd` | `W` / `B` / `E` | Move by WORD (whitespace-delimited) |
+| `tui.altScreen.copyModeLineStart` / `FirstNonBlank` / `LineEnd` | `0` / `^` / `$` | Line start / first non-blank / line end |
+| `tui.altScreen.copyModeTop` | `g` (press twice) | First transcript row |
+| `tui.altScreen.copyModeBottom` | `shift+g` | Last transcript row |
+| `tui.altScreen.copyModeHalfPageUp` / `HalfPageDown` | `ctrl+u` / `ctrl+d` | Move half a page |
+| `tui.altScreen.copyModePageUp` / `PageDown` | `pageUp` / `pageDown` | Move a full page |
+
+Unbound keys are swallowed while copy mode is active, and the footer shows `COPY MODE`. Horizontal
+and vertical motions stop at the line and transcript edges rather than wrapping. Copying uses the
+same clipboard path as mouse selection, and `Ctrl+X` (`app.message.copy`) copies an active copy-mode
+selection and leaves copy mode even when `fullscreenCopyOnSelect` is enabled.
 
 ### Application
 

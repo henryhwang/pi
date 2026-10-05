@@ -56,6 +56,31 @@ export interface Keybindings {
 	"tui.altScreen.searchClose": true;
 	"tui.altScreen.top": true;
 	"tui.altScreen.bottom": true;
+	"tui.altScreen.copyMode": true;
+	"tui.altScreen.copyModeCancel": true;
+	"tui.altScreen.copyModeCopy": true;
+	"tui.altScreen.copyModeVisual": true;
+	"tui.altScreen.copyModeVisualLine": true;
+	"tui.altScreen.copyModeSwapEnds": true;
+	"tui.altScreen.copyModeTop": true;
+	"tui.altScreen.copyModeBottom": true;
+	"tui.altScreen.copyModeLeft": true;
+	"tui.altScreen.copyModeRight": true;
+	"tui.altScreen.copyModeUp": true;
+	"tui.altScreen.copyModeDown": true;
+	"tui.altScreen.copyModeWordForward": true;
+	"tui.altScreen.copyModeWordBackward": true;
+	"tui.altScreen.copyModeWordEnd": true;
+	"tui.altScreen.copyModeBigWordForward": true;
+	"tui.altScreen.copyModeBigWordBackward": true;
+	"tui.altScreen.copyModeBigWordEnd": true;
+	"tui.altScreen.copyModeLineStart": true;
+	"tui.altScreen.copyModeFirstNonBlank": true;
+	"tui.altScreen.copyModeLineEnd": true;
+	"tui.altScreen.copyModeHalfPageUp": true;
+	"tui.altScreen.copyModeHalfPageDown": true;
+	"tui.altScreen.copyModePageUp": true;
+	"tui.altScreen.copyModePageDown": true;
 }
 
 export type Keybinding = keyof Keybindings;
@@ -207,6 +232,43 @@ export const TUI_KEYBINDINGS = {
 	},
 	"tui.altScreen.top": { defaultKeys: "ctrl+home", description: "Scroll viewport to top" },
 	"tui.altScreen.bottom": { defaultKeys: "ctrl+end", description: "Scroll viewport to bottom" },
+	"tui.altScreen.copyMode": {
+		defaultKeys: [],
+		description: "Enter fullscreen keyboard copy mode",
+	},
+	"tui.altScreen.copyModeCancel": {
+		defaultKeys: ["escape", "q", "ctrl+c"],
+		description: "Copy mode: clear the selection, then leave",
+	},
+	"tui.altScreen.copyModeCopy": {
+		defaultKeys: ["y", "enter"],
+		description: "Copy mode: yank the selection and leave",
+	},
+	"tui.altScreen.copyModeVisual": { defaultKeys: "v", description: "Copy mode: character visual selection" },
+	"tui.altScreen.copyModeVisualLine": { defaultKeys: "shift+v", description: "Copy mode: line visual selection" },
+	"tui.altScreen.copyModeSwapEnds": { defaultKeys: "o", description: "Copy mode: swap the selection ends" },
+	"tui.altScreen.copyModeTop": { defaultKeys: "g", description: "Copy mode: press twice to go to the first row" },
+	"tui.altScreen.copyModeBottom": { defaultKeys: "shift+g", description: "Copy mode: go to the last row" },
+	"tui.altScreen.copyModeLeft": { defaultKeys: ["h", "left"], description: "Copy mode: move left" },
+	"tui.altScreen.copyModeRight": { defaultKeys: ["l", "right"], description: "Copy mode: move right" },
+	"tui.altScreen.copyModeUp": { defaultKeys: ["k", "up"], description: "Copy mode: move up" },
+	"tui.altScreen.copyModeDown": { defaultKeys: ["j", "down"], description: "Copy mode: move down" },
+	"tui.altScreen.copyModeWordForward": { defaultKeys: "w", description: "Copy mode: move to the next word" },
+	"tui.altScreen.copyModeWordBackward": { defaultKeys: "b", description: "Copy mode: move to the previous word" },
+	"tui.altScreen.copyModeWordEnd": { defaultKeys: "e", description: "Copy mode: move to the end of a word" },
+	"tui.altScreen.copyModeBigWordForward": { defaultKeys: "shift+w", description: "Copy mode: move to the next WORD" },
+	"tui.altScreen.copyModeBigWordBackward": {
+		defaultKeys: "shift+b",
+		description: "Copy mode: move to the previous WORD",
+	},
+	"tui.altScreen.copyModeBigWordEnd": { defaultKeys: "shift+e", description: "Copy mode: move to the end of a WORD" },
+	"tui.altScreen.copyModeLineStart": { defaultKeys: "0", description: "Copy mode: move to the line start" },
+	"tui.altScreen.copyModeFirstNonBlank": { defaultKeys: "^", description: "Copy mode: move to the first non-blank" },
+	"tui.altScreen.copyModeLineEnd": { defaultKeys: "$", description: "Copy mode: move to the line end" },
+	"tui.altScreen.copyModeHalfPageUp": { defaultKeys: "ctrl+u", description: "Copy mode: move up half a page" },
+	"tui.altScreen.copyModeHalfPageDown": { defaultKeys: "ctrl+d", description: "Copy mode: move down half a page" },
+	"tui.altScreen.copyModePageUp": { defaultKeys: "pageUp", description: "Copy mode: move up a page" },
+	"tui.altScreen.copyModePageDown": { defaultKeys: "pageDown", description: "Copy mode: move down a page" },
 } as const satisfies KeybindingDefinitions;
 
 export interface KeybindingConflict {

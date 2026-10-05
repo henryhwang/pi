@@ -620,6 +620,8 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+			onCopyModeChange: (active) => this.footerDataProvider.setCopyModeActive(active),
+			copyModePassthrough: (data) => this.keybindings.matches(data, "app.message.copy"),
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -908,6 +910,8 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+			onCopyModeChange: (active) => this.footerDataProvider.setCopyModeActive(active),
+			copyModePassthrough: (data) => this.keybindings.matches(data, "app.message.copy"),
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;
@@ -6603,10 +6607,11 @@ export class InteractiveMode {
 		if (
 			options.preferSelection &&
 			this.ui instanceof TuiAltScreen &&
-			!this.ui.getCopyOnSelect() &&
-			this.ui.hasActiveSelection()
+			this.ui.hasActiveSelection() &&
+			(this.ui.isCopyModeActive() || !this.ui.getCopyOnSelect())
 		) {
 			await this.ui.copyActiveSelectionToClipboard();
+			if (this.ui.isCopyModeActive()) this.ui.leaveCopyMode();
 			return;
 		}
 

@@ -101,6 +101,7 @@ export class FooterDataProvider {
 	private static readonly WATCH_DEBOUNCE_MS = 500;
 
 	private extensionStatuses = new Map<string, string>();
+	private copyModeActive = false;
 	private cachedBranch: string | null | undefined = undefined;
 	private gitPaths: GitPaths | null | undefined = undefined;
 	private headWatcher: FSWatcher | null = null;
@@ -154,6 +155,16 @@ export class FooterDataProvider {
 	/** Internal: clear extension statuses */
 	clearExtensionStatuses(): void {
 		this.extensionStatuses.clear();
+	}
+
+	/** Whether fullscreen keyboard copy mode is active, for the footer indicator. */
+	isCopyModeActive(): boolean {
+		return this.copyModeActive;
+	}
+
+	/** Internal: set copy mode active state */
+	setCopyModeActive(active: boolean): void {
+		this.copyModeActive = active;
 	}
 
 	/** Number of unique providers with available models (for footer display) */
@@ -381,8 +392,8 @@ export class FooterDataProvider {
 	}
 }
 
-/** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
+/** Read-only view for extensions - excludes setExtensionStatus, setCopyModeActive, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
+	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange" | "isCopyModeActive"
 >;
