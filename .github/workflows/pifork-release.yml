@@ -1,0 +1,106 @@
+name: Pifork Release
+
+# Builds the standalone pifork npm tarball (the esbuild bundle) and attaches it
+# to a GitHub Release. One tarball works on every platform because it is plain
+# JS; npm resolves the platform-specific dependencies (esbuild, photon) at
+# install time.
+#
+# Trigger by pushing a tag like pifork-v1.0.2-fork.1, or run manually with a tag.
+# The tag prefix keeps upstream's v*-triggered workflows from firing.
+
+on:
+  push:
+    tags:
+      - "pifork-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. pifork-v1.0.2-fork.1)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pifork-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # Fork identity is applied only in this CI workspace, so the repo keeps the upstream
+      # package name (which packages/evals and the install-lock check depend on). The bundle
+      # embeds PACKAGE_NAME and the bin map at build time, so this must happen before Build.
+      - name: Apply fork identity and version from tag
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#pifork-v}"
+          (
+            cd packages/coding-agent
+            npm pkg set "name=@henryhwang/pifork"
+            npm pkg delete bin.pi
+            npm pkg set "bin.pifork=dist/bundle/cli.js"
+            npm pkg set "repository.url=https://github.com/henryhwang/pi"
+            npm pkg set "version=${version}"
+          )
+          echo "PIFORK_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      # packages/ai/src/providers/data is gitignored and generated, so hydrate it
+      # before the offline build (same as the upstream binary release workflow).
+      - name: Hydrate model data
+        run: npm run hydrate:model-data
+
+      - name: Build (offline model data)
+        run: npm run build:offline
+
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          ( cd packages/coding-agent && npm pack )
+          tgz="$(ls -1 packages/coding-agent/*.tgz | head -n1)"
+          test -f "${tgz}"
+          echo "tgz=${tgz}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke-test packed bundle
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          tar -xzf "${{ steps.pack.outputs.tgz }}" -C "${tmp}"
+          actual="$(node "${tmp}/package/dist/bundle/cli.js" --version)"
+          test "${actual}" = "${PIFORK_VERSION}"
+
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          sha256sum "${{ steps.pack.outputs.tgz }}" > "${{ steps.pack.outputs.tgz }}.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}" \
+            "${{ steps.pack.outputs.tgz }}" \
+            "${{ steps.pack.outputs.tgz }}.sha256" \
+            --title "pifork ${PIFORK_VERSION}" \
+            --generate-notes
