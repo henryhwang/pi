@@ -7,7 +7,7 @@ import {
 import { AltScreenFlashContainer } from "./components/alt-screen-flash.ts";
 import { ScrollView } from "./components/scroll-view.ts";
 import { getKeybindings } from "./keybindings.ts";
-import { isKeyRelease, matchesKey } from "./keys.ts";
+import { isKeyRelease } from "./keys.ts";
 import {
 	getLayoutBoxesAt,
 	getScrollbarGeometry,
@@ -322,6 +322,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	/** Whether fullscreen keyboard copy mode is active. */
 	isCopyModeActive(): boolean {
 		return this.copyModeActive;
+	}
+
+	/** Leave fullscreen keyboard copy mode, clearing any active selection. */
+	leaveCopyMode(): void {
+		this.exitCopyMode();
 	}
 
 	/** Whether the fullscreen viewport has a non-empty active text selection. */
@@ -950,11 +955,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private swapCopyEnds(): void {
 		if (!this.copyVisual) return;
 		const anchor = this.selectionAnchor;
-		this.selectionAnchor = this.selectionFocus;
+		const focus = this.selectionFocus;
+		if (!anchor || !focus) return;
+		this.selectionAnchor = focus;
 		this.selectionFocus = anchor;
-		if (this.copyVisualLine && this.selectionAnchor) {
-			this.selectionInitialRange = this.getLineSelection(this.selectionAnchor);
-		}
+		this.copyCursor = { ...anchor };
+		this.selectionInitialRange = this.copyVisualLine ? this.getLineSelection(this.selectionAnchor) : undefined;
+		this.scrollToRevealCopyCursor();
 		this.requestRender();
 	}
 
@@ -965,106 +972,108 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	private handleCopyModeInput(data: string): void {
 		if (!this.copyCursor) return;
+		const keybindings = getKeybindings();
 		const pendingG = this.copyPendingG;
 		this.copyPendingG = false;
-		if (matchesKey(data, "g")) {
-			if (pendingG) this.moveCopyToLineEdge("top");
-			else {
-				this.copyPendingG = true;
-				this.flash("g");
-			}
+		if (pendingG && keybindings.matches(data, "tui.altScreen.copyModeTop")) {
+			this.moveCopyToLineEdge("top");
 			return;
 		}
-		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c") || matchesKey(data, "q")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeCancel")) {
 			if (this.copyVisual) this.toggleCopyVisual(this.copyVisualLine);
 			else this.exitCopyMode();
 			return;
 		}
-		if (matchesKey(data, "y") || matchesKey(data, "enter")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeCopy")) {
 			this.yankCopyMode();
 			return;
 		}
-		if (matchesKey(data, "shift+v")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeVisualLine")) {
 			this.toggleCopyVisual(true);
 			return;
 		}
-		if (matchesKey(data, "v")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeVisual")) {
 			this.toggleCopyVisual(false);
 			return;
 		}
-		if (matchesKey(data, "o") && this.copyVisual) {
+		if (this.copyVisual && keybindings.matches(data, "tui.altScreen.copyModeSwapEnds")) {
 			this.swapCopyEnds();
 			return;
 		}
-		if (matchesKey(data, "shift+g")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeBottom")) {
 			this.moveCopyToLineEdge("bottom");
 			return;
 		}
-		if (matchesKey(data, "h") || matchesKey(data, "left")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeTop")) {
+			this.copyPendingG = true;
+			this.flash("g");
+			return;
+		}
+		if (keybindings.matches(data, "tui.altScreen.copyModeLeft")) {
 			this.moveCopyHorizontal(-1);
 			return;
 		}
-		if (matchesKey(data, "l") || matchesKey(data, "right")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeRight")) {
 			this.moveCopyHorizontal(1);
 			return;
 		}
-		if (matchesKey(data, "j") || matchesKey(data, "down")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeDown")) {
 			this.moveCopyVertical(1);
 			return;
 		}
-		if (matchesKey(data, "k") || matchesKey(data, "up")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeUp")) {
 			this.moveCopyVertical(-1);
 			return;
 		}
-		if (matchesKey(data, "shift+w")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeBigWordForward")) {
 			this.moveCopyWord("w", true);
 			return;
 		}
-		if (matchesKey(data, "shift+b")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeBigWordBackward")) {
 			this.moveCopyWord("b", true);
 			return;
 		}
-		if (matchesKey(data, "shift+e")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeBigWordEnd")) {
 			this.moveCopyWord("e", true);
 			return;
 		}
-		if (matchesKey(data, "w")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeWordForward")) {
 			this.moveCopyWord("w");
 			return;
 		}
-		if (matchesKey(data, "b")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeWordBackward")) {
 			this.moveCopyWord("b");
 			return;
 		}
-		if (matchesKey(data, "e")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeWordEnd")) {
 			this.moveCopyWord("e");
 			return;
 		}
-		if (matchesKey(data, "0")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeLineStart")) {
 			this.moveCopyToLineEdge("start");
 			return;
 		}
-		if (matchesKey(data, "^")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeFirstNonBlank")) {
 			this.moveCopyToLineEdge("firstNonBlank");
 			return;
 		}
-		if (matchesKey(data, "$")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeLineEnd")) {
 			this.moveCopyToLineEdge("end");
 			return;
 		}
-		if (matchesKey(data, "ctrl+d")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeHalfPageDown")) {
 			this.moveCopyPage(1, true);
 			return;
 		}
-		if (matchesKey(data, "ctrl+u")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModeHalfPageUp")) {
 			this.moveCopyPage(-1, true);
 			return;
 		}
-		if (matchesKey(data, "pageDown")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModePageDown")) {
 			this.moveCopyPage(1, false);
 			return;
 		}
-		if (matchesKey(data, "pageUp")) {
+		if (keybindings.matches(data, "tui.altScreen.copyModePageUp")) {
 			this.moveCopyPage(-1, false);
 		}
 	}
@@ -1201,7 +1210,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
 		if (this.copyModeActive && !this.shouldDeferViewportInputToOverlay()) {
-			if (this.copyModePassthrough?.(data)) return undefined;
+			if (this.copyModePassthrough?.(data)) {
+				this.copyPendingG = false;
+				return undefined;
+			}
 			if (!isRelease) this.handleCopyModeInput(data);
 			return { consume: true };
 		}
@@ -1394,6 +1406,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					: "drag"
 				: "press";
 		const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
+
+		// Copy mode is a modal keyboard mode: a mouse press leaves it and proceeds normally.
+		if (this.copyModeActive && type === "press") this.exitCopyMode();
 
 		if (this.mouseCapture || this.mousePressTarget) {
 			const target = this.mouseCapture ?? this.mousePressTarget!;

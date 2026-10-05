@@ -105,6 +105,9 @@ describe("handleCopyCommand with fullscreen selections", () => {
 			expect(copyToClipboard).not.toHaveBeenCalled();
 			expect(host.showError).not.toHaveBeenCalled();
 			expect(host.showStatus).not.toHaveBeenCalled();
+			// Copying a copy-mode selection leaves copy mode, consistent with y/Enter.
+			expect(ui.isCopyModeActive()).toBe(false);
+			expect(ui.hasActiveSelection()).toBe(false);
 		} finally {
 			done();
 		}

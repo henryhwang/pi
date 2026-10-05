@@ -6576,6 +6576,7 @@ export class InteractiveMode {
 			(this.ui.isCopyModeActive() || !this.ui.getCopyOnSelect())
 		) {
 			await this.ui.copyActiveSelectionToClipboard();
+			if (this.ui.isCopyModeActive()) this.ui.leaveCopyMode();
 			return;
 		}
 
