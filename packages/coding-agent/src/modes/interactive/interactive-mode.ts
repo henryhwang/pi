@@ -63,6 +63,7 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getDocsPath,
+	PACKAGE_NAME,
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
@@ -445,6 +446,24 @@ export interface InteractiveModeOptions {
 	initialThemeSetting?: string;
 	/** Terminal implementation. Defaults to the current process terminal. */
 	terminal?: Terminal;
+}
+
+const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
+
+/** Whether this build is the upstream pi package rather than a fork/redistribution. */
+function isOfficialPiPackage(): boolean {
+	return PACKAGE_NAME === OFFICIAL_PACKAGE_NAME;
+}
+
+/**
+ * Fork builds version themselves with a Debian-style revision suffix (for example `1.0.3-fork.2`).
+ * Compare and record the upstream base version so the update notice and the changelog gate behave
+ * the same as they do for official pi: quiet while the base is current, informative once upstream
+ * releases a newer base.
+ */
+function getBaseVersion(version: string): string {
+	const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+	return match ? `${match[1]}.${match[2]}.${match[3]}` : version;
 }
 
 export class InteractiveMode {
@@ -1151,8 +1170,9 @@ export class InteractiveMode {
 				.finally(() => clearTimeout(timeout));
 		}
 
-		// Start version check asynchronously
-		checkForNewPiVersion(this.version).then((newRelease) => {
+		// Start version check asynchronously. Compare the upstream base version: a fork's revision
+		// suffix (1.0.3-fork.2) must not read as "older than 1.0.3" while its base is current.
+		checkForNewPiVersion(getBaseVersion(this.version)).then((newRelease) => {
 			if (newRelease) {
 				this.showNewVersionNotification(newRelease);
 			}
@@ -1331,20 +1351,23 @@ export class InteractiveMode {
 			return undefined;
 		}
 
+		// Fork builds carry a revision suffix; gate the changelog on the upstream base version so
+		// entries settle (and reappear once per upstream rebase) instead of replaying forever.
+		const changelogVersion = getBaseVersion(VERSION);
 		const lastVersion = this.settingsManager.getLastChangelogVersion();
 		const changelogPath = getChangelogPath();
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
 			// Fresh install - record the version, send telemetry, don't show changelog
-			this.settingsManager.setLastChangelogVersion(VERSION);
+			this.settingsManager.setLastChangelogVersion(changelogVersion);
 			this.reportInstallTelemetry(VERSION);
 			return undefined;
 		}
 
-		const newEntries = getNewEntries(entries, lastVersion);
+		const newEntries = getNewEntries(entries, getBaseVersion(lastVersion));
 		if (newEntries.length > 0) {
-			this.settingsManager.setLastChangelogVersion(VERSION);
+			this.settingsManager.setLastChangelogVersion(changelogVersion);
 			this.reportInstallTelemetry(VERSION);
 			return newEntries.map((e) => normalizeChangelogLinks(e.content, e)).join("\n\n");
 		}
@@ -4597,9 +4620,21 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(release: LatestPiRelease): void {
-		const updateInstruction = () =>
-			theme.fg("muted", `New version ${release.version} is available. Run `) +
-			theme.fg("accent", `${APP_NAME} update`);
+		const updateInstruction = () => {
+			if (!isOfficialPiPackage()) {
+				// A fork cannot install upstream pi over itself; point at the rebase instead.
+				return (
+					theme.fg(
+						"muted",
+						`Upstream pi ${release.version} is available (this build is based on ${getBaseVersion(this.version)}). `,
+					) + theme.fg("accent", "Rebase and rebuild.")
+				);
+			}
+			return (
+				theme.fg("muted", `New version ${release.version} is available. Run `) +
+				theme.fg("accent", `${APP_NAME} update`)
+			);
+		};
 		const changelogUrl = "https://pi.dev/changelog";
 		const changelogLine = () => {
 			const changelogLink = getCapabilities().hyperlinks
