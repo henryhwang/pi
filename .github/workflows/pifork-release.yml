@@ -61,6 +61,28 @@ jobs:
             npm pkg set "bin.pifork=dist/bundle/cli.js"
             npm pkg set "repository.url=https://github.com/henryhwang/pi"
             npm pkg set "version=${version}"
+            # pifork is a CLI distribution, not an SDK: drop the library entry so importing the
+            # package fails fast with ERR_PACKAGE_PATH_NOT_EXPORTED instead of loading the
+            # unbundled build, which resolves @earendil-works/pi-tui from the registry (no copy
+            # mode). Ship the bundle plus only the assets the CLI reads at runtime.
+            node -e '
+              const fs = require("fs");
+              const p = "package.json";
+              const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+              delete pkg.main;
+              if (pkg.exports) delete pkg.exports["."];
+              pkg.files = [
+                "dist/bundle",
+                "dist/modes/interactive/theme",
+                "dist/modes/interactive/assets",
+                "dist/core/export-html",
+                "docs",
+                "examples",
+                "containerization.md",
+                "CHANGELOG.md",
+              ];
+              fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+            '
           )
           echo "PIFORK_VERSION=${version}" >> "${GITHUB_ENV}"
 
@@ -81,13 +103,20 @@ jobs:
           test -f "${tgz}"
           echo "tgz=${tgz}" >> "${GITHUB_OUTPUT}"
 
-      - name: Smoke-test packed bundle
+      - name: Smoke-test packed bundle and packaging
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
           tar -xzf "${{ steps.pack.outputs.tgz }}" -C "${tmp}"
           actual="$(node "${tmp}/package/dist/bundle/cli.js" --version)"
           test "${actual}" = "${PIFORK_VERSION}"
+          # Runtime assets the CLI resolves from <pkg>/dist/... must be present.
+          test -d "${tmp}/package/dist/modes/interactive/theme"
+          test -d "${tmp}/package/dist/modes/interactive/assets"
+          test -f "${tmp}/package/dist/core/export-html/template.html"
+          # CLI-only: the unbundled library entry must be gone.
+          test ! -e "${tmp}/package/dist/index.js"
+          node -e "const p=require(process.argv[1]); if (p.main || (p.exports && p.exports['.'])) { console.error('library entry still present'); process.exit(1); }" "${tmp}/package/package.json"
 
       - name: Checksum
         run: |

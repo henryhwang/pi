@@ -607,7 +607,11 @@ export function getAgentDir(): string {
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	return join(homedir(), CONFIG_DIR_NAME, "agent");
+	// Non-official builds (forks/redistributions) default to their own agent directory so a bare
+	// binary never shares the official pi config. `PACKAGE_NAME` is the upstream name in the repo,
+	// so local builds keep `~/.pi/agent`; the release workflow rewrites it to `@henryhwang/pifork`.
+	const agentDirName = PACKAGE_NAME === "@earendil-works/pi-coding-agent" ? "agent" : "agent-fork";
+	return join(homedir(), CONFIG_DIR_NAME, agentDirName);
 }
 
 /** Get path to user's custom themes directory */
