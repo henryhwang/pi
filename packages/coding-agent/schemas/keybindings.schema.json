@@ -195,6 +195,106 @@
       "$ref": "#/$defs/KeybindingValue",
       "description": "Scroll viewport to bottom"
     },
+    "tui.altScreen.copyMode": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Enter fullscreen keyboard copy mode"
+    },
+    "tui.altScreen.copyModeCancel": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: clear the selection, then leave"
+    },
+    "tui.altScreen.copyModeCopy": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: yank the selection and leave"
+    },
+    "tui.altScreen.copyModeVisual": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: character visual selection"
+    },
+    "tui.altScreen.copyModeVisualLine": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: line visual selection"
+    },
+    "tui.altScreen.copyModeSwapEnds": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: swap the selection ends"
+    },
+    "tui.altScreen.copyModeTop": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: press twice to go to the first row"
+    },
+    "tui.altScreen.copyModeBottom": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: go to the last row"
+    },
+    "tui.altScreen.copyModeLeft": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move left"
+    },
+    "tui.altScreen.copyModeRight": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move right"
+    },
+    "tui.altScreen.copyModeUp": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move up"
+    },
+    "tui.altScreen.copyModeDown": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move down"
+    },
+    "tui.altScreen.copyModeWordForward": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the next word"
+    },
+    "tui.altScreen.copyModeWordBackward": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the previous word"
+    },
+    "tui.altScreen.copyModeWordEnd": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the end of a word"
+    },
+    "tui.altScreen.copyModeBigWordForward": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the next WORD"
+    },
+    "tui.altScreen.copyModeBigWordBackward": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the previous WORD"
+    },
+    "tui.altScreen.copyModeBigWordEnd": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the end of a WORD"
+    },
+    "tui.altScreen.copyModeLineStart": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the line start"
+    },
+    "tui.altScreen.copyModeFirstNonBlank": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the first non-blank"
+    },
+    "tui.altScreen.copyModeLineEnd": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move to the line end"
+    },
+    "tui.altScreen.copyModeHalfPageUp": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move up half a page"
+    },
+    "tui.altScreen.copyModeHalfPageDown": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move down half a page"
+    },
+    "tui.altScreen.copyModePageUp": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move up a page"
+    },
+    "tui.altScreen.copyModePageDown": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Copy mode: move down a page"
+    },
     "app.interrupt": {
       "$ref": "#/$defs/KeybindingValue",
       "description": "Cancel or abort"
