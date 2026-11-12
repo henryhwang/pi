@@ -1230,7 +1230,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
-		if (this.copyModeActive && !this.shouldDeferViewportInputToOverlay()) {
+		if (this.copyModeActive && !this.shouldDeferViewportInput()) {
 			if (this.copyModePassthrough?.(data)) {
 				this.copyPendingG = false;
 				return undefined;
@@ -1240,7 +1240,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 		if (
 			!this.copyModeActive &&
-			!this.shouldDeferViewportInputToOverlay() &&
+			!this.shouldDeferViewportInput() &&
 			keybindings.matches(data, "tui.altScreen.copyMode")
 		) {
 			if (!isRelease) this.enterCopyMode();
